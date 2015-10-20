@@ -1,3 +1,5 @@
+CONFIG_MODULE_SIG=n
+
 all:
 	$(MAKE) $(LINUX_MAKE_FLAGS) -C $(LINUX_DIR) M=$(CURDIR) modules
 
