@@ -75,7 +75,7 @@ static struct tty_operations telit_spi_ops = {
 static int __init
 telit_spi_init(void)
 {
-    int err;
+    int rv;
 
     printk(KERN_INFO "Loading telit_spi_tty...\n");
 
@@ -91,19 +91,18 @@ telit_spi_init(void)
     telit_spi_tty_driver->type = TTY_DRIVER_TYPE_SERIAL;
     telit_spi_tty_driver->subtype = SERIAL_TYPE_NORMAL;
     telit_spi_tty_driver->flags = TTY_DRIVER_REAL_RAW | TTY_DRIVER_DYNAMIC_DEV;
-
     tty_set_operations(telit_spi_tty_driver, &telit_spi_ops);
-    err = tty_register_driver(telit_spi_tty_driver);
-    if (err) {
+
+    rv = tty_register_driver(telit_spi_tty_driver);
+    if (rv) {
         printk(KERN_ERR "%s - tty_register_driver failed.\n", __func__);
-        goto exit_telit_spi_init;
+        put_tty_driver(telit_spi_tty_driver);
+        return rv;
     }
 
-    return 0;
+    tty_register_device(telit_spi_tty_driver, 0, NULL);
 
-exit_telit_spi_init:
-    put_tty_driver(telit_spi_tty_driver);
-    return err;
+    return 0;
 }
 
 static void __exit
@@ -111,10 +110,8 @@ telit_spi_exit(void)
 {
     printk(KERN_INFO "Unloading telit_spi_tty...\n");
 
-    err = tty_unregister_driver(telit_spi_tty_driver);
-    if (err) {
-        printk(KERN_ERR "%s - tty_unregister_driver failed.\n", __func__);
-    }
+    tty_unregister_device(telit_spi_tty_driver, 0);
+    tty_unregister_driver(telit_spi_tty_driver);
     put_tty_driver(telit_spi_tty_driver);
 }
 
