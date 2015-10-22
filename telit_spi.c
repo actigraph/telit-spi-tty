@@ -66,7 +66,7 @@
 #include <linux/delay.h>
 #include <linux/reboot.h>
 
-#include "ifx6x60.h"
+#include "telit_spi.h"
 
 #define IFX_SPI_MORE_MASK		0x10
 #define IFX_SPI_MORE_BIT		4	/* bit position in u8 */
@@ -653,7 +653,7 @@ static void ifx_spi_complete(void *ctx)
 	struct ifx_spi_device *ifx_dev = ctx;
 	int length;
 	int actual_length;
-	unsigned char more;
+	unsigned char more = 0;
 	unsigned char cts;
 	int local_write_pending = 0;
 	int queue_length;
@@ -1007,6 +1007,8 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 	struct ifx_modem_platform_data *pl_data;
 	struct ifx_spi_device *ifx_dev;
 
+    printk(KERN_INFO "%s(0x%p)\n", __func__, spi);
+
 	if (saved_ifx_dev) {
 		dev_dbg(&spi->dev, "ignoring subsequent detection");
 		return -ENODEV;
@@ -1355,23 +1357,23 @@ static const struct dev_pm_ops ifx_spi_pm = {
 	.runtime_idle = ifx_spi_pm_runtime_idle
 };
 
-static const struct spi_device_id ifx_id_table[] = {
-	{"ifx6160", 0},
-	{"ifx6260", 0},
+static const struct of_device_id telit_spi_dt_ids[] = {
+    { .compatible = "linux,telit_spi" },
 	{ }
 };
-MODULE_DEVICE_TABLE(spi, ifx_id_table);
+MODULE_DEVICE_TABLE(of, telit_spi_dt_ids);
 
 /* spi operations */
 static struct spi_driver ifx_spi_driver = {
 	.driver = {
 		.name = DRVNAME,
-		.pm = &ifx_spi_pm,
-		.owner = THIS_MODULE},
+		.owner = THIS_MODULE,
+        .of_match_table = of_match_ptr(telit_spi_dt_ids),
+		.pm = &ifx_spi_pm
+    },
 	.probe = ifx_spi_spi_probe,
 	.shutdown = ifx_spi_spi_shutdown,
 	.remove = ifx_spi_spi_remove,
-	.id_table = ifx_id_table
 };
 
 /**
@@ -1382,6 +1384,8 @@ static struct spi_driver ifx_spi_driver = {
 
 static void __exit ifx_spi_exit(void)
 {
+    printk(KERN_INFO "%s()\n", __func__);
+
 	/* unregister */
 	tty_unregister_driver(tty_drv);
 	put_tty_driver(tty_drv);
@@ -1400,6 +1404,8 @@ static void __exit ifx_spi_exit(void)
 static int __init ifx_spi_init(void)
 {
 	int result;
+
+    printk(KERN_INFO "%s()\n", __func__);
 
 	tty_drv = alloc_tty_driver(1);
 	if (!tty_drv) {
@@ -1452,7 +1458,7 @@ err_free_tty:
 module_init(ifx_spi_init);
 module_exit(ifx_spi_exit);
 
-MODULE_AUTHOR("Intel");
-MODULE_DESCRIPTION("IFX6x60 spi driver");
+MODULE_AUTHOR("ActiGraph");
+MODULE_DESCRIPTION("Telit HE910/UE910 spi driver");
 MODULE_LICENSE("GPL");
-MODULE_INFO(Version, "0.1-IFX6x60");
+MODULE_INFO(Version, "0.1-telit_spi");

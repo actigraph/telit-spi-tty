@@ -1,1 +1,1 @@
-obj-m += telit-spi-tty.o
+obj-m += telit_spi.o
