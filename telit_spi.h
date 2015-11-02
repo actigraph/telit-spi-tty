@@ -39,11 +39,11 @@
 #define IFX_RESET_TIMEOUT		msecs_to_jiffies(50)
 
 /* device flags bitfield definitions */
-#define IFX_SPI_STATE_PRESENT		0
-#define IFX_SPI_STATE_IO_IN_PROGRESS	1
-#define IFX_SPI_STATE_IO_READY		2
-#define IFX_SPI_STATE_TIMER_PENDING	3
-#define IFX_SPI_STATE_IO_AVAILABLE	4
+#define IFX_SPI_STATE_PRESENT           0
+#define IFX_SPI_STATE_IO_IN_PROGRESS    1
+#define IFX_SPI_STATE_IO_READY          2
+#define IFX_SPI_STATE_TIMER_PENDING     3
+#define IFX_SPI_STATE_IO_AVAILABLE      4
 
 /* flow control bitfields */
 #define IFX_SPI_DCD			0
@@ -66,8 +66,8 @@
 #define IFX_SPI_STATUS_TIMEOUT		(2000*HZ)
 
 /* values for bits in power status byte */
-#define IFX_SPI_POWER_DATA_PENDING	1
-#define IFX_SPI_POWER_SRDY		2
+#define IFX_SPI_POWER_DATA_PENDING  1
+#define IFX_SPI_POWER_SRDY          2
 
 struct ifx_spi_device {
 	/* Our SPI device */
@@ -89,9 +89,9 @@ struct ifx_spi_device {
 	dma_addr_t rx_dma;
 	dma_addr_t tx_dma;
 
-	int modem;		/* Modem type */
-	int use_dma;		/* provide dma-able addrs in SPI msg */
-	long max_hz;		/* max SPI frequency */
+	int modem;      /* Modem type */
+	int use_dma;    /* provide dma-able addrs in SPI msg */
+	long max_hz;    /* max SPI frequency */
 
 	spinlock_t write_lock;
 	int write_pending;

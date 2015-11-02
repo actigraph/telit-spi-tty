@@ -40,7 +40,6 @@
  *	you need to use this driver for another platform.
  *
  *****************************************************************************/
-#include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/termios.h>
 #include <linux/tty.h>
@@ -55,16 +54,15 @@
 #include <linux/rfkill.h>
 #include <linux/fs.h>
 #include <linux/ip.h>
-#include <linux/dmapool.h>
 #include <linux/gpio.h>
 #include <linux/sched.h>
 #include <linux/time.h>
 #include <linux/wait.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
-#include <linux/spi/ifx_modem.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
+#include <linux/of_gpio.h>
 
 #include "telit_spi.h"
 
@@ -87,7 +85,6 @@ static int ifx_modem_reboot_callback(struct notifier_block *nfb,
 static int ifx_modem_power_off(struct ifx_spi_device *ifx_dev);
 
 /* local variables */
-static int spi_bpw = 16;		/* 8, 16 or 32 bit word length */
 static struct tty_driver *tty_drv;
 static struct ifx_spi_device *saved_ifx_dev;
 static struct lock_class_key ifx_spi_key;
@@ -98,6 +95,8 @@ static struct notifier_block ifx_modem_reboot_notifier_block = {
 
 static int ifx_modem_power_off(struct ifx_spi_device *ifx_dev)
 {
+    printk(KERN_INFO "%s(0x%p)\n", __func__, ifx_dev);
+
 	gpio_set_value(IFX_MDM_RST_PMU, 1);
 	msleep(PO_POST_DELAY);
 
@@ -107,6 +106,8 @@ static int ifx_modem_power_off(struct ifx_spi_device *ifx_dev)
 static int ifx_modem_reboot_callback(struct notifier_block *nfb,
 				 unsigned long event, void *data)
 {
+    printk(KERN_INFO "%s(0x%p, %ld, 0x%p)\n", __func__, nfb, event, data);
+
 	if (saved_ifx_dev)
 		ifx_modem_power_off(saved_ifx_dev);
 	else
@@ -262,13 +263,16 @@ static inline void swap_buf_32(unsigned char *buf, int len, void *end)
 static void mrdy_assert(struct ifx_spi_device *ifx_dev)
 {
 	int val = gpio_get_value(ifx_dev->gpio.srdy);
+
+    printk(KERN_INFO "%s(0x%p), %d\n", __func__, ifx_dev, val);
+
 	if (!val) {
 		if (!test_and_set_bit(IFX_SPI_STATE_TIMER_PENDING,
 				      &ifx_dev->flags)) {
 			mod_timer(&ifx_dev->spi_timer,jiffies + IFX_SPI_TIMEOUT_SEC*HZ);
-
 		}
 	}
+
 	ifx_spi_power_state_set(ifx_dev, IFX_SPI_POWER_DATA_PENDING);
 	mrdy_set_high(ifx_dev);
 }
@@ -305,6 +309,8 @@ static int ifx_spi_tiocmget(struct tty_struct *tty)
 	unsigned int value;
 	struct ifx_spi_device *ifx_dev = tty->driver_data;
 
+    printk(KERN_INFO "%s(0x%p)\n", __func__, tty);
+
 	value =
 	(test_bit(IFX_SPI_RTS, &ifx_dev->signal_state) ? TIOCM_RTS : 0) |
 	(test_bit(IFX_SPI_DTR, &ifx_dev->signal_state) ? TIOCM_DTR : 0) |
@@ -331,6 +337,8 @@ static int ifx_spi_tiocmset(struct tty_struct *tty,
 {
 	struct ifx_spi_device *ifx_dev = tty->driver_data;
 
+    printk(KERN_INFO "%s(0x%p)\n", __func__, tty);
+
 	if (set & TIOCM_RTS)
 		set_bit(IFX_SPI_RTS, &ifx_dev->signal_state);
 	if (set & TIOCM_DTR)
@@ -356,6 +364,7 @@ static int ifx_spi_tiocmset(struct tty_struct *tty,
  */
 static int ifx_spi_open(struct tty_struct *tty, struct file *filp)
 {
+    printk(KERN_INFO "%s(0x%p, 0x%p)\n", __func__, tty, filp);
 	return tty_port_open(&saved_ifx_dev->tty_port, tty, filp);
 }
 
@@ -370,6 +379,7 @@ static int ifx_spi_open(struct tty_struct *tty, struct file *filp)
 static void ifx_spi_close(struct tty_struct *tty, struct file *filp)
 {
 	struct ifx_spi_device *ifx_dev = tty->driver_data;
+    printk(KERN_INFO "%s(0x%p, 0x%p)\n", __func__, tty, filp);
 	tty_port_close(&ifx_dev->tty_port, tty, filp);
 	/* FIXME: should we do an ifx_spi_reset here ? */
 }
@@ -448,6 +458,8 @@ static int ifx_spi_prepare_tx_buffer(struct ifx_spi_device *ifx_dev)
 	int tx_count;
 	unsigned char *tx_buffer;
 
+    printk(KERN_INFO "%s(0x%p)\n", __func__, ifx_dev);
+
 	tx_buffer = ifx_dev->tx_buffer;
 
 	/* make room for required SPI header */
@@ -509,6 +521,7 @@ static int ifx_spi_write(struct tty_struct *tty, const unsigned char *buf,
 	bool is_fifo_empty;
 	int tx_count;
 
+    printk(KERN_INFO "%s(0x%p, 0x%p, %d)\n", __func__, tty, buf, count);
 	spin_lock_irqsave(&ifx_dev->fifo_lock, flags);
 	is_fifo_empty = kfifo_is_empty(&ifx_dev->tx_fifo);
 	tx_count = kfifo_in(&ifx_dev->tx_fifo, tmp_buf, count);
@@ -529,6 +542,7 @@ static int ifx_spi_write(struct tty_struct *tty, const unsigned char *buf,
 static int ifx_spi_write_room(struct tty_struct *tty)
 {
 	struct ifx_spi_device *ifx_dev = tty->driver_data;
+    printk(KERN_INFO "%s(0x%p)\n", __func__, tty);
 	return IFX_SPI_FIFO_SIZE - kfifo_len(&ifx_dev->tx_fifo);
 }
 
@@ -542,6 +556,7 @@ static int ifx_spi_write_room(struct tty_struct *tty)
 static int ifx_spi_chars_in_buffer(struct tty_struct *tty)
 {
 	struct ifx_spi_device *ifx_dev = tty->driver_data;
+    printk(KERN_INFO "%s(0x%p)\n", __func__, tty);
 	return kfifo_len(&ifx_dev->tx_fifo);
 }
 
@@ -556,6 +571,7 @@ static int ifx_spi_chars_in_buffer(struct tty_struct *tty)
 static void ifx_spi_hangup(struct tty_struct *tty)
 {
 	struct ifx_spi_device *ifx_dev = tty->driver_data;
+    printk(KERN_INFO "%s(0x%p)\n", __func__, tty);
 	tty_port_hangup(&ifx_dev->tty_port);
 }
 
@@ -570,6 +586,8 @@ static int ifx_port_activate(struct tty_port *port, struct tty_struct *tty)
 {
 	struct ifx_spi_device *ifx_dev =
 		container_of(port, struct ifx_spi_device, tty_port);
+
+    printk(KERN_INFO "%s(0x%p, 0x%p)\n", __func__, port, tty);
 
 	/* clear any old data; can't do this in 'close' */
 	kfifo_reset(&ifx_dev->tx_fifo);
@@ -587,6 +605,8 @@ static int ifx_port_activate(struct tty_port *port, struct tty_struct *tty)
 	/* set flag to allows data transfer */
 	set_bit(IFX_SPI_STATE_IO_AVAILABLE, &ifx_dev->flags);
 
+    printk(KERN_INFO "\tidx_dev->flags = %04lX\n", ifx_dev->flags);
+
 	return 0;
 }
 
@@ -601,6 +621,8 @@ static void ifx_port_shutdown(struct tty_port *port)
 {
 	struct ifx_spi_device *ifx_dev =
 		container_of(port, struct ifx_spi_device, tty_port);
+
+    printk(KERN_INFO "%s(0x%p)\n", __func__, port);
 
 	clear_bit(IFX_SPI_STATE_IO_AVAILABLE, &ifx_dev->flags);
 	mrdy_set_low(ifx_dev);
@@ -659,6 +681,8 @@ static void ifx_spi_complete(void *ctx)
 	int queue_length;
 	int srdy;
 	int decode_result;
+
+    printk(KERN_INFO "%s(0x%p)\n", __func__, ctx);
 
 	mrdy_set_low(ifx_dev);
 
@@ -745,8 +769,14 @@ static void ifx_spi_io(unsigned long data)
 	int retval;
 	struct ifx_spi_device *ifx_dev = (struct ifx_spi_device *) data;
 
+    printk(KERN_INFO "%s(%ld)\n", __func__, data);
+    printk(KERN_INFO "\tidx_dev->flags = %04lX\n", ifx_dev->flags);
+
 	if (!test_and_set_bit(IFX_SPI_STATE_IO_IN_PROGRESS, &ifx_dev->flags) &&
 		test_bit(IFX_SPI_STATE_IO_AVAILABLE, &ifx_dev->flags)) {
+
+        printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
+
 		if (ifx_dev->gpio.unack_srdy_int_nb > 0)
 			ifx_dev->gpio.unack_srdy_int_nb--;
 
@@ -773,19 +803,11 @@ static void ifx_spi_io(unsigned long data)
 		/*
 		 * setup dma pointers
 		 */
-		if (ifx_dev->use_dma) {
-			ifx_dev->spi_msg.is_dma_mapped = 1;
-			ifx_dev->tx_dma = ifx_dev->tx_bus;
-			ifx_dev->rx_dma = ifx_dev->rx_bus;
-			ifx_dev->spi_xfer.tx_dma = ifx_dev->tx_dma;
-			ifx_dev->spi_xfer.rx_dma = ifx_dev->rx_dma;
-		} else {
-			ifx_dev->spi_msg.is_dma_mapped = 0;
-			ifx_dev->tx_dma = (dma_addr_t)0;
-			ifx_dev->rx_dma = (dma_addr_t)0;
-			ifx_dev->spi_xfer.tx_dma = (dma_addr_t)0;
-			ifx_dev->spi_xfer.rx_dma = (dma_addr_t)0;
-		}
+        ifx_dev->spi_msg.is_dma_mapped = 0;
+        ifx_dev->tx_dma = (dma_addr_t)0;
+        ifx_dev->rx_dma = (dma_addr_t)0;
+        ifx_dev->spi_xfer.tx_dma = (dma_addr_t)0;
+        ifx_dev->spi_xfer.rx_dma = (dma_addr_t)0;
 
 		spi_message_add_tail(&ifx_dev->spi_xfer, &ifx_dev->spi_msg);
 
@@ -795,14 +817,20 @@ static void ifx_spi_io(unsigned long data)
 		mrdy_assert(ifx_dev);
 
 		retval = spi_async(ifx_dev->spi_dev, &ifx_dev->spi_msg);
+        printk(KERN_INFO "spi_async(0x%p, 0x%p) => %d\n",
+                ifx_dev->spi_dev, &ifx_dev->spi_msg, retval);
 		if (retval) {
 			clear_bit(IFX_SPI_STATE_IO_IN_PROGRESS,
 				  &ifx_dev->flags);
 			tasklet_schedule(&ifx_dev->io_work_tasklet);
 			return;
 		}
-	} else
+
+	} else {
+        printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
+
 		ifx_dev->write_pending = 1;
+    }
 }
 
 /**
@@ -870,6 +898,9 @@ error_ret:
  */
 static void ifx_spi_handle_srdy(struct ifx_spi_device *ifx_dev)
 {
+    printk(KERN_INFO "%s(0x%p)\n", __func__, ifx_dev);
+    printk(KERN_INFO "\tidx_dev->flags = %04lX\n", ifx_dev->flags);
+
 	if (test_bit(IFX_SPI_STATE_TIMER_PENDING, &ifx_dev->flags)) {
 		del_timer(&ifx_dev->spi_timer);
 		clear_bit(IFX_SPI_STATE_TIMER_PENDING, &ifx_dev->flags);
@@ -893,6 +924,9 @@ static void ifx_spi_handle_srdy(struct ifx_spi_device *ifx_dev)
 static irqreturn_t ifx_spi_srdy_interrupt(int irq, void *dev)
 {
 	struct ifx_spi_device *ifx_dev = dev;
+
+    printk(KERN_INFO "%s(%d, 0x%p)\n", __func__, irq, dev);
+
 	ifx_dev->gpio.unack_srdy_int_nb++;
 	ifx_spi_handle_srdy(ifx_dev);
 	return IRQ_HANDLED;
@@ -909,6 +943,7 @@ static irqreturn_t ifx_spi_srdy_interrupt(int irq, void *dev)
  *	FIXME: review locking on MR_INPROGRESS versus
  *	parallel unsolicited reset/solicited reset
  */
+#if 0
 static irqreturn_t ifx_spi_reset_interrupt(int irq, void *dev)
 {
 	struct ifx_spi_device *ifx_dev = dev;
@@ -932,6 +967,7 @@ static irqreturn_t ifx_spi_reset_interrupt(int irq, void *dev)
 	}
 	return IRQ_HANDLED;
 }
+#endif
 
 /**
  *	ifx_spi_free_device - free device
@@ -942,14 +978,8 @@ static irqreturn_t ifx_spi_reset_interrupt(int irq, void *dev)
 static void ifx_spi_free_device(struct ifx_spi_device *ifx_dev)
 {
 	ifx_spi_free_port(ifx_dev);
-	dma_free_coherent(&ifx_dev->spi_dev->dev,
-				IFX_SPI_TRANSFER_SIZE,
-				ifx_dev->tx_buffer,
-				ifx_dev->tx_bus);
-	dma_free_coherent(&ifx_dev->spi_dev->dev,
-				IFX_SPI_TRANSFER_SIZE,
-				ifx_dev->rx_buffer,
-				ifx_dev->rx_bus);
+    kfree(ifx_dev->tx_buffer);
+    kfree(ifx_dev->rx_buffer);
 }
 
 /**
@@ -960,6 +990,7 @@ static void ifx_spi_free_device(struct ifx_spi_device *ifx_dev)
  */
 static int ifx_spi_reset(struct ifx_spi_device *ifx_dev)
 {
+#if 0
 	int ret;
 	/*
 	 * set up modem power, reset
@@ -986,6 +1017,10 @@ static int ifx_spi_reset(struct ifx_spi_device *ifx_dev)
 
 	ifx_dev->mdm_reset_state = 0;
 	return ret;
+#else
+    set_bit(MR_COMPLETE, &ifx_dev->mdm_reset_state);
+    return 0;
+#endif
 }
 
 /**
@@ -1004,19 +1039,19 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 {
 	int ret;
 	int srdy;
-	struct ifx_modem_platform_data *pl_data;
 	struct ifx_spi_device *ifx_dev;
 
     printk(KERN_INFO "%s(0x%p)\n", __func__, spi);
+    printk(KERN_INFO "\tmax_speed_hz = %d\n", spi->max_speed_hz);
+    printk(KERN_INFO "\tchip_select = %d\n", spi->chip_select);
+    printk(KERN_INFO "\tbits_per_word = %d\n", spi->bits_per_word);
+    printk(KERN_INFO "\tmode = %d\n", spi->mode);
+    printk(KERN_INFO "\tirq = %d\n", spi->irq);
+    printk(KERN_INFO "\tmodalias = %s\n", spi->modalias);
+    printk(KERN_INFO "\tcs_gpio = %d\n", spi->cs_gpio);
 
 	if (saved_ifx_dev) {
 		dev_dbg(&spi->dev, "ignoring subsequent detection");
-		return -ENODEV;
-	}
-
-	pl_data = dev_get_platdata(&spi->dev);
-	if (!pl_data) {
-		dev_err(&spi->dev, "missing platform data!");
 		return -ENODEV;
 	}
 
@@ -1026,22 +1061,20 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 		dev_err(&spi->dev, "spi device allocation failed");
 		return -ENOMEM;
 	}
+    printk(KERN_INFO "\tidx_dev->flags = %04lX\n", ifx_dev->flags);
 	saved_ifx_dev = ifx_dev;
 	ifx_dev->spi_dev = spi;
 	clear_bit(IFX_SPI_STATE_IO_IN_PROGRESS, &ifx_dev->flags);
+    printk(KERN_INFO "\tidx_dev->flags = %04lX\n", ifx_dev->flags);
 	spin_lock_init(&ifx_dev->write_lock);
 	spin_lock_init(&ifx_dev->power_lock);
 	ifx_dev->power_status = 0;
 	init_timer(&ifx_dev->spi_timer);
 	ifx_dev->spi_timer.function = ifx_spi_timeout;
 	ifx_dev->spi_timer.data = (unsigned long)ifx_dev;
-	ifx_dev->modem = pl_data->modem_type;
-	ifx_dev->use_dma = pl_data->use_dma;
-	ifx_dev->max_hz = pl_data->max_hz;
+	ifx_dev->use_dma = 1;
+
 	/* initialize spi mode, etc */
-	spi->max_speed_hz = ifx_dev->max_hz;
-	spi->mode = IFX_SPI_MODE | (SPI_LOOP & spi->mode);
-	spi->bits_per_word = spi_bpw;
 	ret = spi_setup(spi);
 	if (ret) {
 		dev_err(&spi->dev, "SPI setup wasn't successful %d", ret);
@@ -1060,24 +1093,18 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 	ifx_dev->spi_more = 0;
 	ifx_dev->spi_slave_cts = 0;
 
-	/*initialize transfer and dma buffers */
-	ifx_dev->tx_buffer = dma_alloc_coherent(ifx_dev->spi_dev->dev.parent,
-				IFX_SPI_TRANSFER_SIZE,
-				&ifx_dev->tx_bus,
-				GFP_KERNEL);
+	/*initialize transfer buffers */
+	ifx_dev->tx_buffer = kmalloc(IFX_SPI_TRANSFER_SIZE, GFP_KERNEL);
 	if (!ifx_dev->tx_buffer) {
-		dev_err(&spi->dev, "DMA-TX buffer allocation failed");
+		dev_err(&spi->dev, "TX buffer allocation failed");
 		ret = -ENOMEM;
 		goto error_ret;
 	}
-	ifx_dev->rx_buffer = dma_alloc_coherent(ifx_dev->spi_dev->dev.parent,
-				IFX_SPI_TRANSFER_SIZE,
-				&ifx_dev->rx_bus,
-				GFP_KERNEL);
+	ifx_dev->rx_buffer = kmalloc(IFX_SPI_TRANSFER_SIZE, GFP_KERNEL);
 	if (!ifx_dev->rx_buffer) {
-		dev_err(&spi->dev, "DMA-RX buffer allocation failed");
+		dev_err(&spi->dev, "RX buffer allocation failed");
 		ret = -ENOMEM;
-		goto error_ret;
+		goto error_ret1;
 	}
 
 	/* initialize waitq for modem reset */
@@ -1096,17 +1123,19 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 		goto error_ret;
 	}
 
-	ifx_dev->gpio.reset = pl_data->rst_pmu;
-	ifx_dev->gpio.po = pl_data->pwr_on;
-	ifx_dev->gpio.mrdy = pl_data->mrdy;
-	ifx_dev->gpio.srdy = pl_data->srdy;
-	ifx_dev->gpio.reset_out = pl_data->rst_out;
+	ifx_dev->gpio.reset = of_get_named_gpio(spi->dev.of_node, "modem-shutdown", 0);
+	ifx_dev->gpio.reset = of_get_named_gpio(spi->dev.of_node, "modem-shutdown", 0);
+	ifx_dev->gpio.po = of_get_named_gpio(spi->dev.of_node, "modem-on", 0);
+	ifx_dev->gpio.mrdy = of_get_named_gpio(spi->dev.of_node, "modem-mrdy", 0);
+	ifx_dev->gpio.srdy = of_get_named_gpio(spi->dev.of_node, "modem-srdy", 0);
+	ifx_dev->gpio.reset_out = of_get_named_gpio(spi->dev.of_node, "modem-status", 0);
 
 	dev_info(&spi->dev, "gpios %d, %d, %d, %d, %d",
 		 ifx_dev->gpio.reset, ifx_dev->gpio.po, ifx_dev->gpio.mrdy,
 		 ifx_dev->gpio.srdy, ifx_dev->gpio.reset_out);
 
 	/* Configure gpios */
+#if 0
 	ret = gpio_request(ifx_dev->gpio.reset, "ifxModem");
 	if (ret < 0) {
 		dev_err(&spi->dev, "Unable to allocate GPIO%d (RESET)",
@@ -1131,6 +1160,7 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 		ret = -EBUSY;
 		goto error_ret3;
 	}
+#endif
 
 	ret = gpio_request(ifx_dev->gpio.mrdy, "ifxModem");
 	if (ret < 0) {
@@ -1163,6 +1193,7 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 		goto error_ret5;
 	}
 
+#if 0
 	ret = gpio_request(ifx_dev->gpio.reset_out, "ifxModem");
 	if (ret < 0) {
 		dev_err(&spi->dev, "Unable to allocate GPIO%d (RESET_OUT)",
@@ -1187,6 +1218,7 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 			gpio_to_irq(ifx_dev->gpio.reset_out));
 		goto error_ret6;
 	}
+#endif
 
 	ret = ifx_spi_reset(ifx_dev);
 
@@ -1219,16 +1251,23 @@ static int ifx_spi_spi_probe(struct spi_device *spi)
 
 error_ret7:
 	free_irq(gpio_to_irq(ifx_dev->gpio.reset_out), (void *)ifx_dev);
+#if 0
 error_ret6:
 	gpio_free(ifx_dev->gpio.srdy);
+#endif
 error_ret5:
 	gpio_free(ifx_dev->gpio.mrdy);
 error_ret4:
 	gpio_free(ifx_dev->gpio.reset);
 error_ret3:
 	gpio_free(ifx_dev->gpio.po);
+#if 0
 error_ret2:
 	gpio_free(ifx_dev->gpio.reset_out);
+#endif
+    kfree(ifx_dev->rx_buffer);
+error_ret1:
+    kfree(ifx_dev->tx_buffer);
 error_ret:
 	ifx_spi_free_device(ifx_dev);
 	saved_ifx_dev = NULL;
@@ -1246,17 +1285,27 @@ error_ret:
 static int ifx_spi_spi_remove(struct spi_device *spi)
 {
 	struct ifx_spi_device *ifx_dev = spi_get_drvdata(spi);
+
+    printk(KERN_INFO "%s(0x%p)\n", __func__, spi);
+
+	pm_runtime_disable(&spi->dev);
+
 	/* stop activity */
 	tasklet_kill(&ifx_dev->io_work_tasklet);
+
 	/* free irq */
+#if 0
 	free_irq(gpio_to_irq(ifx_dev->gpio.reset_out), (void *)ifx_dev);
+#endif
 	free_irq(gpio_to_irq(ifx_dev->gpio.srdy), (void *)ifx_dev);
 
 	gpio_free(ifx_dev->gpio.srdy);
 	gpio_free(ifx_dev->gpio.mrdy);
+#if 0
 	gpio_free(ifx_dev->gpio.reset);
 	gpio_free(ifx_dev->gpio.po);
 	gpio_free(ifx_dev->gpio.reset_out);
+#endif
 
 	/* free allocations */
 	ifx_spi_free_device(ifx_dev);
@@ -1276,6 +1325,7 @@ static void ifx_spi_spi_shutdown(struct spi_device *spi)
 {
 	struct ifx_spi_device *ifx_dev = spi_get_drvdata(spi);
 
+    printk(KERN_INFO "%s(0x%p)\n", __func__, spi);
 	ifx_modem_power_off(ifx_dev);
 }
 
