@@ -114,9 +114,11 @@ struct ifx_spi_device {
 		/* gpio lines */
 		unsigned short srdy;		/* slave-ready gpio */
 		unsigned short mrdy;		/* master-ready gpio */
-		unsigned short reset;		/* modem-reset gpio */
-		unsigned short po;		/* modem-on gpio */
-		unsigned short reset_out;	/* modem-in-reset gpio */
+		unsigned short status;		/* modem-status gpio */
+		unsigned short power;		/* modem-power gpio */
+		unsigned short on;		    /* modem-on gpio */
+		unsigned short shutdown;	/* modem-shutdown gpio */
+
 		/* state/stats */
 		int unack_srdy_int_nb;
 	} gpio;
